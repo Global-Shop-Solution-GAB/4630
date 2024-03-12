@@ -1,0 +1,257 @@
+Program.Sub.ScreenSU.Start
+Gui.F_ReprintCofC..Create
+Gui.F_ReprintCofC..Caption("Reprint Certificate of Compliance")
+Gui.F_ReprintCofC..Size(12510,7305)
+Gui.F_ReprintCofC..MinX(0)
+Gui.F_ReprintCofC..MinY(0)
+Gui.F_ReprintCofC..Position(0,0)
+Gui.F_ReprintCofC..BackColor(-2147483633)
+Gui.F_ReprintCofC..MousePointer(0)
+Gui.F_ReprintCofC..Event(UnLoad,Unload)
+Gui.F_ReprintCofC.tab1.Create(Tab)
+Gui.F_ReprintCofC.tab1.Size(12105,6000)
+Gui.F_ReprintCofC.tab1.Position(105,645)
+Gui.F_ReprintCofC.tab1.FontSize(9)
+Gui.F_ReprintCofC.tab1.Tabs(2)
+Gui.F_ReprintCofC.tab1.SetTab(0)
+Gui.F_ReprintCofC.tab1.Caption("Shipped")
+Gui.F_ReprintCofC.tab1.SetTab(1)
+Gui.F_ReprintCofC.tab1.Caption("Invoiced")
+Gui.F_ReprintCofC.GsGCShipped.Create(GsGridControl)
+Gui.F_ReprintCofC.GsGCShipped.Size(11910,5445)
+Gui.F_ReprintCofC.GsGCShipped.Position(75,75)
+Gui.F_ReprintCofC.GsGCShipped.Parent("tab1",0)
+Gui.F_ReprintCofC.GsGCShipped.Event(RowClick,gvShip_RowClick)
+Gui.F_ReprintCofC.GsGCInvoiced.Create(GsGridControl)
+Gui.F_ReprintCofC.GsGCInvoiced.Size(11910,5445)
+Gui.F_ReprintCofC.GsGCInvoiced.Position(75,75)
+Gui.F_ReprintCofC.GsGCInvoiced.Parent("tab1",1)
+Gui.F_ReprintCofC.cmdRefresh.Create(Button)
+Gui.F_ReprintCofC.cmdRefresh.Size(1155,495)
+Gui.F_ReprintCofC.cmdRefresh.Position(90,75)
+Gui.F_ReprintCofC.cmdRefresh.Caption("REFRESH")
+Gui.F_ReprintCofC.cmdRefresh.FontSize(9)
+Gui.F_ReprintCofC.cmdRefresh.Event(Click,cmdRefresh_Click)
+Program.Sub.ScreenSU.End
+
+Program.Sub.Preflight.Start
+V.Global.iReportID.Declare
+Program.Sub.Preflight.End
+
+Program.Sub.Main.Start
+V.Local.sIcon.Declare
+
+F.ODBC.Connection!conx.OpenConnection(V.Ambient.PDSN,V.Ambient.PUser,V.Ambient.PPass)
+F.Global.BI.GetIDFromName("GAB_4630_COFC_114.rpt",V.Global.iReportID)
+
+'Only for invoice form ID 107
+F.Intrinsic.Control.If(V.Caller.Hook,=,16090)
+	F.Intrinsic.Control.If(V.Passed.009001,=,"000107")
+		F.Intrinsic.Control.CallSub(hook16090)
+	F.Intrinsic.Control.EndIf
+F.Intrinsic.Control.Else
+	F.Intrinsic.String.Build("{0}\GAB\GAS\gss2.ico",V.Caller.PluginsDir,v.Local.sIcon)
+	Gui.F_ReprintCofC..Icon(V.Local.sIcon)
+	Gui.F_ReprintCofC.tab1.SetTab(0)
+	Gui.F_ReprintCofC.tab1.Anchor(15)
+	Gui.F_ReprintCofC.GsGCInvoiced.Anchor(15)
+	Gui.F_ReprintCofC.GsGCShipped.Anchor(15)
+	F.Intrinsic.Control.CallSub(cmdrefresh_click)
+	Gui.F_ReprintCofC..Show
+F.Intrinsic.Control.EndIf
+Program.Sub.Main.End
+
+Program.Sub.Hook16090.Start
+V.Local.dShipDate.Declare(Date)
+V.Local.i1.Declare
+V.Local.i2.Declare
+V.Local.sBIParam.Declare
+V.Local.sBIParamVal.Declare
+V.Local.sCustomer.Declare
+V.Local.sCustomerName.Declare
+V.Local.sCustomerPO.Declare
+V.Local.sDesc.Declare
+V.Local.sOrderLine.Declare
+V.Local.sOrderSeq.Declare
+V.Local.sPckNo.Declare
+V.Local.sReference.Declare
+V.Local.sSQL.Declare
+
+F.Intrinsic.UI.InvokeWaitDialog("Preparing data for CofC")
+F.Intrinsic.String.Build("select pck_no, customer, customer_name, date_shipped from v_bi_packing_list where terminal = '{0}' and rptid = '000107'",V.Caller.Terminal,V.Local.sSQL)
+F.ODBC.Connection!conx.OpenLocalRecordsetRO("rst",V.Local.sSQL)
+V.Local.sPckNo.Set(V.ODBC.conx!rst.FieldValTrim!pck_no)
+V.Local.dShipDate.Set(V.ODBC.conx!rst.FieldVal!date_shipped)
+V.Local.sCustomer.Set(V.ODBC.conx!rst.FieldValTrim!customer)
+V.Local.sCustomerName.Set(V.ODBC.conx!rst.FieldValTrim!customer_name)
+F.ODBC.conx!rst.Close
+
+'Delete packing list number is already stored in INA_DRIVLOK_COFC 
+F.Intrinsic.String.Build("select * from ina_drivlok_cofc where pck_no = '{0}'",V.Local.sPckNo.Trim,V.Local.sSQL)
+F.ODBC.Connection!conx.OpenLocalRecordsetRO("rst",V.Local.sSQL)
+F.Intrinsic.Control.If(V.ODBC.conx!rst.EOF,=,False)
+	F.Intrinsic.String.Build("delete from ina_drivlok_cofc where pck_no = '{0}'",V.Local.sPckNo.Trim,V.Local.sSQL)
+	F.ODBC.Connection!conx.Execute(V.Local.sSQL)
+F.Intrinsic.Control.EndIf
+F.ODBC.conx!rst.Close
+
+'Build data to be inserted into INA_DRIVLOK_COFC
+F.Intrinsic.String.Build("select bol.order_no as SO, bol.order_seq as Suffix, bol.order_line as Line, bol.Part, bol.cust_part as CustPart, bol.part_desc as Description, inv.description_2 as AltDesc1, inv.description_3 as AltDesc2, bol.qty as Quantity, bol.lot as Lot from v_bol_pack_dtl bol left join v_inventory_mst2 inv on bol.part = inv.part and bol.locn = inv.location where bol.pck_no = '{0}' order by bol.order_no, bol.order_seq, bol.order_line",V.Local.sPckNo.Trim,V.Local.sSQL)
+F.Data.DataTable.CreateFromSQL("dtPacking","conx",V.Local.sSQL)
+F.Intrinsic.Control.For(V.Local.i1,0,V.DataTable.dtPacking.RowCount--,1)
+	F.Intrinsic.String.Build("{0} {1} {2}",V.DataTable.dtPacking(V.Local.i1).Description!FieldValTrim,V.DataTable.dtPacking(V.Local.i1).AltDesc1!FieldValTrim,V.DataTable.dtPacking(V.Local.i1).AltDesc2!FieldValTrim,V.Local.sDesc)
+	F.Intrinsic.String.Build("select customer_po from v_shipment_header where order_no = '{0}' and order_suffix = '{1}'",V.DataTable.dtPacking(V.Local.i1).SO!FieldValTrim,V.DataTable.dtPacking(V.Local.i1).Suffix!FieldValTrim,V.Local.sSQL)
+	F.ODBC.Connection!conx.OpenLocalRecordsetRO("rst",V.Local.sSQL)
+	V.Local.sCustomerPO.Set(V.ODBC.conx!rst.FieldValTrim!customer_po)
+	F.ODBC.conx!rst.Close
+	F.Intrinsic.String.Build("insert into ina_drivlok_cofc(pck_no, order_no, order_line, customer, name_customer, date_shipped, customer_po, part, cust_part, description, lot, quantity) values('{0}','{1}','{2}','{3}','{4}','{5}','{6}','{7}','{8}','{9}','{10}',{11})",V.Local.sPckNo.Trim,V.DataTable.dtPacking(V.Local.i1).SO!FieldValTrim,V.DataTable.dtPacking(V.Local.i1).Line!FieldValTrim,V.Local.sCustomer.Trim,V.Local.sCustomerName.Trim,V.Local.dShipDate.PervasiveDate,V.Local.sCustomerPO.Trim,V.DataTable.dtPacking(V.Local.i1).Part!FieldValTrim,V.DataTable.dtPacking(V.Local.i1).CustPart!FieldValTrim,V.Local.sDesc.Trim,V.DataTable.dtPacking(V.Local.i1).Lot!FieldValTrim,V.DataTable.dtPacking(V.Local.i1).Quantity!FieldVal,V.Local.sSQL)
+	F.ODBC.Connection!conx.Execute(V.Local.sSQL)
+F.Intrinsic.Control.Next(V.Local.i1)
+F.Data.DataTable.Close("dtPacking")
+F.ODBC.Connection!conx.Close
+F.Intrinsic.UI.CloseWaitDialog
+
+'Print the report
+F.Intrinsic.Control.If(V.Global.iReportID,<>,-1)
+	F.Intrinsic.String.Split("PCK_NO*!*","*!*",V.Local.sBIParam)
+	F.Intrinsic.String.Concat(V.Local.sPckNo.Trim,"*!*",V.Local.sBIParamVal)
+	F.Intrinsic.String.Split(V.Local.sBIParamVal,"*!*",V.Local.sBIParamVal)
+	F.Global.BI.PrintReport(V.Global.iReportID,16,V.Local.sBIParam,V.Local.sBIParamVal,"GSView",True)
+F.Intrinsic.Control.EndIf
+Program.Sub.Hook16090.End
+
+Program.Sub.cmdRefresh_Click.Start
+V.Local.sSQL.Declare
+
+F.Intrinsic.Control.If(V.DataTable.dtShip.Exists,=,True)
+	F.Data.DataTable.Close("dtShip")
+F.Intrinsic.Control.EndIf
+
+F.Intrinsic.UI.InvokeWaitDialog("Loading shipment data","Reprint Certificate of Compliance [APAC]")
+F.Data.DataTable.CreateFromSQL("dtShip","conx","select S.PCK_NO, S.ORDER_NO,  S.CUSTOMER, C.NAME_CUSTOMER, S.DATE_SHIPPED, S.CUSTOMER_PO from v_shipment_header S left join v_customer_master C on S.customer = C.customer where S.pck_no <> '' order by s.pck_no desc",True)
+Gui.F_ReprintCofC.GsGCShipped.AddGridviewFromDatatable("gvShip","dtShip")
+Gui.F_ReprintCofC.GsGCShipped.MainView("gvShip")
+Gui.F_ReprintCofC.GsGCShipped.SetColumnProperty("gvShip","PCK_NO","Caption","Packing List")
+Gui.F_ReprintCofC.GsGCShipped.SetColumnProperty("gvShip","ORDER_NO","Caption","Order No.")
+Gui.F_ReprintCofC.GsGCShipped.SetColumnProperty("gvShip","CUSTOMER","Caption","Customer No.")
+Gui.F_ReprintCofC.GsGCShipped.SetColumnProperty("gvShip","NAME_CUSTOMER","Caption","Customer Name")
+Gui.F_ReprintCofC.GsGCShipped.SetColumnProperty("gvShip","DATE_SHIPPED","Caption","Shipped Date")
+Gui.F_ReprintCofC.GsGCShipped.SetColumnProperty("gvShip","PCK_NO","HeaderHAlignment","Center")
+Gui.F_ReprintCofC.GsGCShipped.SetColumnProperty("gvShip","ORDER_NO","HeaderHAlignment","Center")
+Gui.F_ReprintCofC.GsGCShipped.SetColumnProperty("gvShip","CUSTOMER","HeaderHAlignment","Center")
+Gui.F_ReprintCofC.GsGCShipped.SetColumnProperty("gvShip","NAME_CUSTOMER","HeaderHAlignment","Center")
+Gui.F_ReprintCofC.GsGCShipped.SetColumnProperty("gvShip","DATE_SHIPPED","HeaderHAlignment","Center")
+Gui.F_ReprintCofC.GsGCShipped.SetColumnProperty("gvShip","ORDER_NO","CellHAlignment","Center")
+Gui.F_ReprintCofC.GsGCShipped.SetColumnProperty("gvShip","PCK_NO","CellHAlignment","Center")
+Gui.F_ReprintCofC.GsGCShipped.SetColumnProperty("gvShip","CUSTOMER","CellHAlignment","Center")
+Gui.F_ReprintCofC.GsGCShipped.SetColumnProperty("gvShip","DATE_SHIPPED","CellHAlignment","Center")
+Gui.F_ReprintCofC.GsGCShipped.SetColumnProperty("gvShip","DATE_SHIPPED","DisplayCustomDateTime","d")
+Gui.F_ReprintCofC.GsGCShipped.SetColumnProperty("gvShip","NAME_CUSTOMER","MinWidth","250")
+Gui.F_ReprintCofC.GsGCShipped.SetColumnProperty("gvShip","CUSTOMER_PO","Visible",False)
+Gui.F_ReprintCofC.GsGCShipped.SetColumnProperty("gvShip","PCK_NO","AllowEdit",False)
+Gui.F_ReprintCofC.GsGCShipped.SetColumnProperty("gvShip","ORDER_NO","AllowEdit",False)
+Gui.F_ReprintCofC.GsGCShipped.SetColumnProperty("gvShip","CUSTOMER","AllowEdit",False)
+Gui.F_ReprintCofC.GsGCShipped.SetColumnProperty("gvShip","NAME_CUSTOMER","AllowEdit",False)
+Gui.F_ReprintCofC.GsGCShipped.SetColumnProperty("gvShip","DATE_SHIPPED","AllowEdit",False)
+
+F.Intrinsic.UI.ChangeWaitStatus("Loading invoice data")
+
+F.Intrinsic.Control.If(V.DataTable.dtInvoice.Exists,=,True)
+	F.Data.DataTable.Close("dtInvoice")
+F.Intrinsic.Control.EndIf
+
+F.Data.DataTable.CreateFromSQL("dtInvoice","conx","select PCK_NO, ORDER_NO, CUSTOMER, NAME_CUSTOMER_SHIP as NAME_CUSTOMER, DATE_SHIPPED, CUSTOMER_PO from v_order_hist_head where PCK_NO <> '' order by PCK_NO desc, ORDER_NO desc, DATE_SHIPPED desc",True)
+Gui.F_ReprintCofC.GsGCInvoiced.AddGridviewFromDatatable("gvInvoice","dtInvoice")
+Gui.F_ReprintCofC.GsGCInvoiced.MainView("gvInvoice")
+Gui.F_ReprintCofC.GsGCInvoiced.SetColumnProperty("gvInvoice","PCK_NO","Caption","Packing List")
+Gui.F_ReprintCofC.GsGCInvoiced.SetColumnProperty("gvInvoice","ORDER_NO","Caption","Order No.")
+Gui.F_ReprintCofC.GsGCInvoiced.SetColumnProperty("gvInvoice","CUSTOMER","Caption","Customer No.")
+Gui.F_ReprintCofC.GsGCInvoiced.SetColumnProperty("gvInvoice","NAME_CUSTOMER","Caption","Customer Name")
+Gui.F_ReprintCofC.GsGCInvoiced.SetColumnProperty("gvInvoice","DATE_SHIPPED","Caption","Shipped Date")
+Gui.F_ReprintCofC.GsGCInvoiced.SetColumnProperty("gvInvoice","PCK_NO","HeaderHAlignment","Center")
+Gui.F_ReprintCofC.GsGCInvoiced.SetColumnProperty("gvInvoice","ORDER_NO","HeaderHAlignment","Center")
+Gui.F_ReprintCofC.GsGCInvoiced.SetColumnProperty("gvInvoice","CUSTOMER","HeaderHAlignment","Center")
+Gui.F_ReprintCofC.GsGCInvoiced.SetColumnProperty("gvInvoice","NAME_CUSTOMER","HeaderHAlignment","Center")
+Gui.F_ReprintCofC.GsGCInvoiced.SetColumnProperty("gvInvoice","DATE_SHIPPED","HeaderHAlignment","Center")
+Gui.F_ReprintCofC.GsGCInvoiced.SetColumnProperty("gvInvoice","ORDER_NO","CellHAlignment","Center")
+Gui.F_ReprintCofC.GsGCInvoiced.SetColumnProperty("gvInvoice","PCK_NO","CellHAlignment","Center")
+Gui.F_ReprintCofC.GsGCInvoiced.SetColumnProperty("gvInvoice","CUSTOMER","CellHAlignment","Center")
+Gui.F_ReprintCofC.GsGCInvoiced.SetColumnProperty("gvInvoice","DATE_SHIPPED","CellHAlignment","Center")
+Gui.F_ReprintCofC.GsGCInvoiced.SetColumnProperty("gvInvoice","DATE_SHIPPED","DisplayCustomDateTime","d")
+Gui.F_ReprintCofC.GsGCInvoiced.SetColumnProperty("gvInvoice","NAME_CUSTOMER","MinWidth","250")
+Gui.F_ReprintCofC.GsGCInvoiced.SetColumnProperty("gvInvoice","CUSTOMER_PO","Visible",False)
+F.Intrinsic.UI.CloseWaitDialog
+Program.Sub.cmdRefresh_Click.End
+
+Program.Sub.Unload.Start
+F.Data.DataTable.Close("dtShip")
+F.ODBC.Connection!conx.Close
+F.Intrinsic.Control.End
+
+Program.Sub.Unload.End
+
+Program.Sub.GenerateReport.Start
+V.Local.dShipDate.Declare(Date)
+V.Local.i1.Declare
+V.Local.i2.Declare
+V.Local.sBIParam.Declare
+V.Local.sBIParamVal.Declare
+V.Local.sCustomer.Declare
+V.Local.sCustomerName.Declare
+V.Local.sCustomerPO.Declare
+V.Local.sDesc.Declare
+V.Local.sOrderLine.Declare
+V.Local.sOrderSeq.Declare
+V.Local.sPckNo.Declare
+V.Local.sReference.Declare
+V.Local.sSQL.Declare
+
+F.Intrinsic.UI.InvokeWaitDialog("Preparing data for CofC")
+V.Local.sPckNo.Set(V.Args.sPckNo)
+V.Local.dShipDate.Set(V.Args.dShipDate)
+V.Local.sCustomer.Set(V.Args.sCustomer)
+V.Local.sCustomerName.Set(V.Args.sCustomerName)
+
+'Delete packing list number is already stored in INA_DRIVLOK_COFC 
+F.Intrinsic.String.Build("select * from ina_drivlok_cofc where pck_no = '{0}'",V.Local.sPckNo.Trim,V.Local.sSQL)
+F.ODBC.Connection!conx.OpenLocalRecordsetRO("rst",V.Local.sSQL)
+F.Intrinsic.Control.If(V.ODBC.conx!rst.EOF,=,False)
+	F.Intrinsic.String.Build("delete from ina_drivlok_cofc where pck_no = '{0}'",V.Local.sPckNo.Trim,V.Local.sSQL)
+	F.ODBC.Connection!conx.Execute(V.Local.sSQL)
+F.Intrinsic.Control.EndIf
+F.ODBC.conx!rst.Close
+
+'Build data to be inserted into INA_DRIVLOK_COFC
+F.Intrinsic.String.Build("select bol.order_no as SO, bol.order_seq as Suffix, bol.order_line as Line, bol.Part, bol.cust_part as CustPart, bol.part_desc as Description, inv.description_2 as AltDesc1, inv.description_3 as AltDesc2, bol.qty as Quantity, bol.lot as Lot from v_bol_pack_dtl bol left join v_inventory_mst2 inv on bol.part = inv.part and bol.locn = inv.location where bol.pck_no = '{0}' order by bol.order_no, bol.order_seq, bol.order_line",V.Local.sPckNo.Trim,V.Local.sSQL)
+F.Data.DataTable.CreateFromSQL("dtPacking","conx",V.Local.sSQL)
+F.Intrinsic.Control.For(V.Local.i1,0,V.DataTable.dtPacking.RowCount--,1)
+	F.Intrinsic.String.Build("{0} {1} {2}",V.DataTable.dtPacking(V.Local.i1).Description!FieldValTrim,V.DataTable.dtPacking(V.Local.i1).AltDesc1!FieldValTrim,V.DataTable.dtPacking(V.Local.i1).AltDesc2!FieldValTrim,V.Local.sDesc)
+	V.Local.sCustomerPO.Set(V.Args.sCustomerPO)
+	F.Intrinsic.String.Build("insert into ina_drivlok_cofc(pck_no, order_no, order_line, customer, name_customer, date_shipped, customer_po, part, cust_part, description, lot, quantity) values('{0}','{1}','{2}','{3}','{4}','{5}','{6}','{7}','{8}','{9}','{10}',{11})",V.Local.sPckNo.Trim,V.DataTable.dtPacking(V.Local.i1).SO!FieldValTrim,V.DataTable.dtPacking(V.Local.i1).Line!FieldValTrim,V.Local.sCustomer.Trim,V.Local.sCustomerName.Trim,V.Local.dShipDate.PervasiveDate,V.Local.sCustomerPO.Trim,V.DataTable.dtPacking(V.Local.i1).Part!FieldValTrim,V.DataTable.dtPacking(V.Local.i1).CustPart!FieldValTrim,V.Local.sDesc.Trim,V.DataTable.dtPacking(V.Local.i1).Lot!FieldValTrim,V.DataTable.dtPacking(V.Local.i1).Quantity!FieldVal,V.Local.sSQL)
+	F.ODBC.Connection!conx.Execute(V.Local.sSQL)
+F.Intrinsic.Control.Next(V.Local.i1)
+F.Data.DataTable.Close("dtPacking")
+F.ODBC.Connection!conx.Close
+F.Intrinsic.UI.CloseWaitDialog
+
+'Print the report
+F.Intrinsic.Control.If(V.Global.iReportID,<>,-1)
+	F.Intrinsic.String.Split("PCK_NO*!*","*!*",V.Local.sBIParam)
+	F.Intrinsic.String.Concat(V.Local.sPckNo.Trim,"*!*",V.Local.sBIParamVal)
+	F.Intrinsic.String.Split(V.Local.sBIParamVal,"*!*",V.Local.sBIParamVal)
+	F.Global.BI.PrintReport(V.Global.iReportID,16,V.Local.sBIParam,V.Local.sBIParamVal,"GSView",True)
+F.Intrinsic.Control.EndIf
+Program.Sub.GenerateReport.End
+
+Program.Sub.gvShip_RowClick.Start
+F.Intrinsic.Control.CallSub(generatereport,"sPckNo",V.DataTable.dtShip(V.Args.RowIndex).PCK_NO!FieldValTrim,"sCustomer",V.DataTable.dtShip(V.Args.RowIndex).CUSTOMER!FieldValTrim,"sCustomerName",V.DataTable.dtShip(V.Args.RowIndex).NAME_CUSTOMER!FieldValTrim,"sCustomerPO",V.DataTable.dtShip(V.Args.RowIndex).CUSTOMER_PO!FieldValTrim,"dShipDate",V.DataTable.dtShip(V.Args.RowIndex).DATE_SHIPPED!FieldVal)
+Program.Sub.gvShip_RowClick.End
+
+Program.Sub.gvInvoice_RowClick.Start
+F.Intrinsic.Control.CallSub(generatereport,"sPckNo",V.DataTable.dtInvoice(V.Args.RowIndex).PCK_NO!FieldValTrim,"sCustomer",V.DataTable.dtInvoice(V.Args.RowIndex).CUSTOMER!FieldValTrim,"sCustomerName",V.DataTable.dtInvoice(V.Args.RowIndex).NAME_CUSTOMER!FieldValTrim,"sCustomerPO",V.DataTable.dtInvoice(V.Args.RowIndex).CUSTOMER_PO!FieldValTrim,"dShipDate",V.DataTable.dtInvoice(V.Args.RowIndex).DATE_SHIPPED!FieldVal)
+Program.Sub.gvInvoice_RowClick.End
+
+Program.Sub.Comments.Start
+${$0$}$INA_DRIVLOK_COFC.g2u$}$MHERTANTO$}$17/5/2017 4:52:01 PM$}$False
+${$3$}$0$}$$}$-1$}$-1$}$$}$1/1/1900$}$This is a custom program written for Driv-Lok, Inc. to help them generate Certificate of Compliance
+Program.Sub.Comments.End
